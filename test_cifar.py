@@ -40,9 +40,21 @@ from utils.utils import (
 def ace(output_logits, target, weight=None, clambda=0.5, nc=100, mask=None): # output is logits
         probs = F.softmax(output_logits, dim=1) # f(x_i) Bs x K
         # print(f"clambda={clambda} probs={probs} mask={mask} target={target}")
-        yprobs = clambda * mask * torch.multiply(probs, F.one_hot(target, num_classes=nc)).sum(dim=1) + 1 # f(x_i) Bs x K
+        lamdaf = 1 + clambda * mask * torch.multiply(probs, F.one_hot(target, num_classes=nc)).sum(dim=1) # f(x_i) Bs x K
         ce = F.cross_entropy(output_logits, target, weight=weight, reduction='none')
-        ace = (ce * yprobs)
+        ace = (ce * lambdaf)
+        return ace
+
+def ace1(output_logits, target, weight=None, clambda=0.5, f0=None, nc=100, mask=None): # output is logits
+        probs = F.softmax(output_logits, dim=1) # f(x_i) Bs x K
+        # print(f"clambda={clambda} probs={probs} mask={mask} target={target}")
+        f = f0 - torch.multiply(probs, F.one_hot(target, num_classes=nc)).sum(dim=1) # Bs x 1
+        z = torch.zeros_like(f) # 1 x Bs
+        zf = torch.vstack(z, f) # 2 x Bs
+        h = torch.max(zh , dim=0) # 1 x Bs
+        lamdah = 1 + clambda * mask * h #  1 x Bs
+        ce = F.cross_entropy(output_logits, target, weight=weight, reduction='none') # 1 x Bs
+        ace = (lamdah * ce)
         return ace
 
 def train_sample(epoch, train_loader, model, optimizer, logger, class_weights):

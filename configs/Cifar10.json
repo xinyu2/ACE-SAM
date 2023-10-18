@@ -25,6 +25,7 @@
         "flat_ratio": 0.3,
         "noise_ratio": 1.0e-6,
         "up_limit": 1.0,
+        "loss": "ace1",
         "optimizer": {
             "type": "SGD", 
             "momentum": 0.9,
@@ -56,7 +57,7 @@
     "gpu_id": "0,1",
     "use_gpu": true,
     "valid_step": 1,
-    "save_dir" : "",
+    "save_dir" : "./checkpoint/",
     "variance" : 1e-3,
     "debug" : false
 }
