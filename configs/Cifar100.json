@@ -25,6 +25,7 @@
         "flat_ratio": 0.5,
         "noise_ratio": 1.0e-6,
         "up_limit": 0.3,
+        "loss": "ace1",
         "optimizer": {
             "type": "SGD", 
             "momentum": 0.9,

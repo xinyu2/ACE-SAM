@@ -20,7 +20,7 @@ from datasets.Samplers import ClassAwareSampler
 from datasets.ClassPrioritySampler import ClassPrioritySampler
 
 from utils.lr_scheduler import adjust_learning_rate
-from utils.loss import mixup_ace
+from utils.loss import mixup_ace, mixup_ace1
 from utils.pytorch import grad_norm
 
 from utils.utils import (
@@ -37,6 +37,25 @@ from utils.utils import (
     param_count
 )
 
+# ----- LOAD PARAM -----
+path = "./configs/Cifar10.json" 
+# path = "./configs/Cifar100.json"
+parser = argparse.ArgumentParser()
+parser.add_argument('--config', type=str, default=path)
+parser.add_argument('--work', type=str, default='train')
+parser.add_argument('--lossfn', type=str, default='ace1')
+parser.add_argument('--clambda', type=float, default=0.5)
+parser.add_argument('--f0', type=float, default=0.5)
+
+args = parser.parse_args()
+cfg = config
+work = args.work
+lossfn = args.lossfn
+clambda = args.clambda
+f0 = args.f0
+print(f"===============================================================")
+print(f"parms: work={work}, lossfn={lossfn}, clambda={clambda}, f0={f0}")
+print(f"===============================================================")
 def ace(output_logits, target, weight=None, clambda=0.5, nc=100, mask=None): # output is logits
         probs = F.softmax(output_logits, dim=1) # f(x_i) Bs x K
         # print(f"clambda={clambda} probs={probs} mask={mask} target={target}")
@@ -45,17 +64,17 @@ def ace(output_logits, target, weight=None, clambda=0.5, nc=100, mask=None): # o
         ace = (ce * lambdaf)
         return ace
 
-def ace1(output_logits, target, weight=None, clambda=0.5, f0=None, nc=100, mask=None): # output is logits
+def ace1(output_logits, target, weight=None, clambda=0.5, nc=100, mask=None, f0=None): # output is logits
         probs = F.softmax(output_logits, dim=1) # f(x_i) Bs x K
-        # print(f"clambda={clambda} probs={probs} mask={mask} target={target}")
         f = f0 - torch.multiply(probs, F.one_hot(target, num_classes=nc)).sum(dim=1) # Bs x 1
         z = torch.zeros_like(f) # 1 x Bs
-        zf = torch.vstack(z, f) # 2 x Bs
-        h = torch.max(zh , dim=0) # 1 x Bs
+        zf = torch.vstack((z, f)) # 2 x Bs
+        h = torch.max(zf , dim=0).values # 1 x Bs
+        # print(f"clambda={clambda} mask={mask.shape}/{mask} h={h.shape}/{h}")
         lamdah = 1 + clambda * mask * h #  1 x Bs
         ce = F.cross_entropy(output_logits, target, weight=weight, reduction='none') # 1 x Bs
-        ace = (lamdah * ce)
-        return ace
+        ace1 = (lamdah * ce)
+        return ace1
 
 def train_sample(epoch, train_loader, model, optimizer, logger, class_weights):
 
@@ -76,7 +95,7 @@ def train_sample(epoch, train_loader, model, optimizer, logger, class_weights):
         # loss_ori = F.cross_entropy(o, y, reduction = 'none')
         mask = [1] * len(y)
         mask= torch.tensor(mask,dtype=torch.float32, requires_grad=False).cuda()
-        loss_ori = ace(o, y, nc=ncls, mask=mask)
+        loss_ori = ace1(o, y, nc=ncls, mask=mask, f0=f0)
 
         if cfg['train']['sampler'] == 'IS':
             loss = loss_ori
@@ -100,7 +119,7 @@ def train_sample(epoch, train_loader, model, optimizer, logger, class_weights):
                 o_tmp = model.module.classifier(fea_new)
 
                 # loss_tmp_ = F.cross_entropy(o_tmp, y, reduction = 'none')
-                loss_tmp_ = ace(o_tmp, y, nc=ncls, mask=mask)
+                loss_tmp_ = ace1(o_tmp, y, nc=ncls, mask=mask, f0=f0)
                 loss_tmp = loss_tmp_ * class_weights[y_tmp]
                 # if step == 0: 
                 #     print(f"*** loss = {loss_tmp.shape}, class-weights={class_weights.shape} ***")
@@ -158,15 +177,15 @@ def train(epoch, train_loader, model, optimizer, logger, class_ratio, class_weig
         mask= torch.tensor(mask,dtype=torch.float32, requires_grad=False).cuda()
         if cfg['train']['mixup']:
             # criterion = nn.CrossEntropyLoss(reduction = 'none').cuda()
-            criterion = ace
+            criterion = ace1
             images, targets_a, targets_b, lam = mixup_data(x, y, cfg['train']['mixup_alpha'])
             fea, _, o = model(images)
             # loss_ori = mixup_criterion(criterion, o, targets_a, targets_b, lam)
-            loss_ori = mixup_ace(criterion, o, targets_a, targets_b, lam, ncls, mask)
+            loss_ori = mixup_ace1(criterion, o, targets_a, targets_b, lam, ncls, mask, f0)
         else:
             fea, _, o = model(x)
             # loss_ori = F.cross_entropy(o, y, reduction = 'none')
-            loss_ori = ace(o, y, nc=ncls, mask=mask)
+            loss_ori = ace1(o, y, nc=ncls, mask=mask, f0=f0)
 
         y_in = y.detach().cpu().numpy()
 
@@ -207,7 +226,7 @@ def train(epoch, train_loader, model, optimizer, logger, class_ratio, class_weig
             mask_tmp = [1] * len(y[idx])
             mask_tmp = torch.tensor(mask_tmp,dtype=torch.float32, requires_grad=False).cuda()
             # loss_tmp = F.cross_entropy(o_tmp, y[idx], reduction = 'none')
-            loss_tmp = ace(o_tmp, y[idx], nc=ncls, mask=mask_tmp)
+            loss_tmp = ace1(o_tmp, y[idx], nc=ncls, mask=mask_tmp, f0=f0)
             loss_list.extend(loss_tmp)             
                     
             # ----- resume weights -----
@@ -263,7 +282,7 @@ def val(epoch, val_loader, model, logger, train_dataset):
             mask= torch.tensor(mask,dtype=torch.float32, requires_grad=False).cuda()
             _, _, o = model(x)
             # loss = F.cross_entropy(o, y, reduction = 'none')
-            loss = ace(o, y, nc=ncls, mask=mask)
+            loss = ace1(o, y, nc=ncls, mask=mask, f0=f0)
             loss = loss.mean()
         
             pred_q = F.softmax(o, dim=1)
@@ -293,18 +312,7 @@ def val(epoch, val_loader, model, logger, train_dataset):
 
 if __name__ == '__main__':
 
-	# ----- LOAD PARAM -----
-    path = "./configs/Cifar10.json" 
-    # path = "./configs/Cifar100.json"
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default=path)
-    parser.add_argument('--work', type=str, default='train')
-    parser.add_argument('--clambda', type=float, default=0.5)
-
-    args = parser.parse_args()
-    cfg = config
-    work = args.work
-    clambda = args.clambda
+	
     with open(args.config, "r") as f:
         exp_params = json.load(f)
 
@@ -369,6 +377,9 @@ if __name__ == '__main__':
     model = create_model(cfg, *feature_param).cuda()
     model = nn.DataParallel(model)
     ncls = int(cfg['setting']['num_class'])
+
+    # ----- LOSS -----
+
     if work == 'train':
         # ----- OPTIMIZER -----
         optimizer = get_optimizer(cfg, model)
