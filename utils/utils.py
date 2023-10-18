@@ -74,7 +74,11 @@ def deep_update_dict(fr, to):
     # assume dicts have same keys
     for k, v in fr.items():
         if isinstance(v, dict):
-            deep_update_dict(v, to[k])
+            # deep_update_dict(v, to[k])
+            if k in to:
+                deep_update_dict(v, to[k])
+            else:
+                to[k] = v  # Add the key to 'to' if it doesn't exist
         else:
             to[k] = v
     return to

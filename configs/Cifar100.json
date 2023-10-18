@@ -1,7 +1,7 @@
 {
     "dataset": {
         "dataset_name": "Cifar100",
-        "data_root":""
+        "data_root":"./datasets"
     },
     "backbone": {
         "name": "ResNet-32"

@@ -97,3 +97,6 @@ def EntropyLoss(predict_prob, class_level_weight=None, instance_level_weight=Non
 
 def mixup_criterion(criterion, pred, y_a, y_b, lam):
     return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
+
+def mixup_ace(criterion, pred, y_a, y_b, lam, ncls, mask):
+    return lam * criterion(pred, y_a, nc=ncls, mask=mask) + (1 - lam) * criterion(pred, y_b, nc=ncls, mask=mask)
