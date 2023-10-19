@@ -404,7 +404,7 @@ if __name__ == '__main__':
             else:
                 if epoch == cfg['train']['stage']:
                     optimizer = lr_reset(cfg, model)   # RESET LR
-                    weights_name = cfg['save_dir'] + str(cfg['train']['cifar_imb_ratio']) + '_flat_ratio_' + str(cfg['train']['flat_ratio']) + '_noise_' + str(cfg['train']['noise_ratio']) + '_best_model.pth'
+                    weights_name = cfg['save_dir'] + 'L' + str(clambda) + '_F' + str(f0) + '_best_model.pth'
                     state_dict = torch.load(weights_name)
                     model.load_state_dict(state_dict)
 
@@ -425,10 +425,10 @@ if __name__ == '__main__':
                 print('Find a better model and save it!')
                 logger.info('Find a better model and save it!')       
 
-                weights_name = cfg['save_dir'] + str(cfg['train']['cifar_imb_ratio']) + '_flat_ratio_' + str(cfg['train']['flat_ratio']) + '_noise_' + str(cfg['train']['noise_ratio']) + '_best_model.pth'
+                weights_name = cfg['save_dir'] + 'L' + str(clambda) + '_F' + str(f0) + '_best_model.pth'
                 torch.save(model.state_dict(), weights_name)
     else: # test
-        weights_name = cfg['save_dir'] + str(cfg['train']['cifar_imb_ratio']) + '_flat_ratio_' + str(cfg['train']['flat_ratio']) + '_noise_' + str(cfg['train']['noise_ratio']) + '_best_model.pth'
+        weights_name = cfg['save_dir'] + 'L' + str(clambda) + '_F' + str(f0) + '_best_model.pth'
         state_dict = torch.load(weights_name)
         model.load_state_dict(state_dict)
         # ----- TESTING -----
