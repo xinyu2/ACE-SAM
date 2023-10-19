@@ -38,8 +38,7 @@ from utils.utils import (
 )
 
 # ----- LOAD PARAM -----
-path = "./configs/Cifar10.json" 
-# path = "./configs/Cifar100.json"
+path = "./configs/Cifar10.json" # path = "./configs/Cifar100.json"
 parser = argparse.ArgumentParser()
 parser.add_argument('--config', type=str, default=path)
 parser.add_argument('--work', type=str, default='train')
@@ -95,7 +94,7 @@ def train_sample(epoch, train_loader, model, optimizer, logger, class_weights):
         # loss_ori = F.cross_entropy(o, y, reduction = 'none')
         mask = [1] * len(y)
         mask= torch.tensor(mask,dtype=torch.float32, requires_grad=False).cuda()
-        loss_ori = ace1(o, y, nc=ncls, mask=mask, f0=f0)
+        loss_ori = ace1(o, y, clambda=clambda, nc=ncls, mask=mask, f0=f0)
 
         if cfg['train']['sampler'] == 'IS':
             loss = loss_ori
@@ -119,7 +118,7 @@ def train_sample(epoch, train_loader, model, optimizer, logger, class_weights):
                 o_tmp = model.module.classifier(fea_new)
 
                 # loss_tmp_ = F.cross_entropy(o_tmp, y, reduction = 'none')
-                loss_tmp_ = ace1(o_tmp, y, nc=ncls, mask=mask, f0=f0)
+                loss_tmp_ = ace1(o_tmp, y, clambda=clambda, nc=ncls, mask=mask, f0=f0)
                 loss_tmp = loss_tmp_ * class_weights[y_tmp]
                 # if step == 0: 
                 #     print(f"*** loss = {loss_tmp.shape}, class-weights={class_weights.shape} ***")
@@ -181,11 +180,11 @@ def train(epoch, train_loader, model, optimizer, logger, class_ratio, class_weig
             images, targets_a, targets_b, lam = mixup_data(x, y, cfg['train']['mixup_alpha'])
             fea, _, o = model(images)
             # loss_ori = mixup_criterion(criterion, o, targets_a, targets_b, lam)
-            loss_ori = mixup_ace1(criterion, o, targets_a, targets_b, lam, ncls, mask, f0)
+            loss_ori = mixup_ace1(criterion, o, targets_a, targets_b, clambda, ncls, mask, f0)
         else:
             fea, _, o = model(x)
             # loss_ori = F.cross_entropy(o, y, reduction = 'none')
-            loss_ori = ace1(o, y, nc=ncls, mask=mask, f0=f0)
+            loss_ori = ace1(o, y, clambda=clambda, nc=ncls, mask=mask, f0=f0)
 
         y_in = y.detach().cpu().numpy()
 
@@ -226,7 +225,7 @@ def train(epoch, train_loader, model, optimizer, logger, class_ratio, class_weig
             mask_tmp = [1] * len(y[idx])
             mask_tmp = torch.tensor(mask_tmp,dtype=torch.float32, requires_grad=False).cuda()
             # loss_tmp = F.cross_entropy(o_tmp, y[idx], reduction = 'none')
-            loss_tmp = ace1(o_tmp, y[idx], nc=ncls, mask=mask_tmp, f0=f0)
+            loss_tmp = ace1(o_tmp, y[idx], clambda=clambda, nc=ncls, mask=mask_tmp, f0=f0)
             loss_list.extend(loss_tmp)             
                     
             # ----- resume weights -----
@@ -282,7 +281,7 @@ def val(epoch, val_loader, model, logger, train_dataset):
             mask= torch.tensor(mask,dtype=torch.float32, requires_grad=False).cuda()
             _, _, o = model(x)
             # loss = F.cross_entropy(o, y, reduction = 'none')
-            loss = ace1(o, y, nc=ncls, mask=mask, f0=f0)
+            loss = ace1(o, y, clambda=clambda, nc=ncls, mask=mask, f0=f0)
             loss = loss.mean()
         
             pred_q = F.softmax(o, dim=1)
