@@ -180,7 +180,7 @@ def train(epoch, train_loader, model, optimizer, logger, class_ratio, class_weig
             images, targets_a, targets_b, lam = mixup_data(x, y, cfg['train']['mixup_alpha'])
             fea, _, o = model(images)
             # loss_ori = mixup_criterion(criterion, o, targets_a, targets_b, lam)
-            loss_ori = mixup_ace1(criterion, o, targets_a, targets_b, clambda, ncls, mask, f0)
+            loss_ori = mixup_ace1(criterion, o, targets_a, targets_b, lam, clambda, ncls, mask, f0)
         else:
             fea, _, o = model(x)
             # loss_ori = F.cross_entropy(o, y, reduction = 'none')
