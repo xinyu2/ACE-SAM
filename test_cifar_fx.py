@@ -20,7 +20,7 @@ from datasets.Samplers import ClassAwareSampler
 from datasets.ClassPrioritySampler import ClassPrioritySampler
 
 from utils.lr_scheduler import adjust_learning_rate
-from utils.loss import mixup_criterion, mixup_ace, mixup_ace1
+from utils.loss import mixup_criterion, mixup_ace1
 from utils.pytorch import grad_norm
 
 from utils.utils import (
@@ -34,7 +34,8 @@ from utils.utils import (
     freeze_backbone,
     mixup_data,
     lr_reset,
-    param_count
+    param_count,
+    get_mask
 )
 
 # ----- LOAD PARAM -----
@@ -52,6 +53,8 @@ work = args.work
 lossfn = args.lossfn
 clambda = args.clambda
 f0 = args.f0
+milestones = [50, 160, 200, 229]
+lambdas = [0.0, clambda, clambda]
 print(f"===============================================================")
 print(f"parms: work={work}, lossfn={lossfn}, clambda={clambda}, f0={f0}")
 print(f"===============================================================")
@@ -63,7 +66,7 @@ def ace(output_logits, target, weight=None, clambda=0.5, nc=100, mask=None): # o
         ace = (ce * lambdaf)
         return ace
 
-def ace1(output_logits, target, weight=None, clambda=0.5, nc=100, mask=None, f0=None): # output is logits
+def ace1_old(output_logits, target, weight=None, clambda=0.5, nc=100, mask=None, f0=None): # output is logits
         probs = F.softmax(output_logits, dim=1) # f(x_i) Bs x K
         f = f0 - torch.multiply(probs, F.one_hot(target, num_classes=nc)).sum(dim=1) # Bs x 1
         z = torch.zeros_like(f) # 1 x Bs
@@ -75,6 +78,18 @@ def ace1(output_logits, target, weight=None, clambda=0.5, nc=100, mask=None, f0=
         ace1 = (lamdah * ce)
         return ace1
 
+def ace1(output_logits, target, weight=None, nc=100, mask=None, f0=None): # output is logits
+        probs = F.softmax(output_logits, dim=1) # f(x_i) Bs x K
+        f = f0 - torch.multiply(probs, F.one_hot(target, num_classes=nc)).sum(dim=1) # Bs x 1
+        z = torch.zeros_like(f) # 1 x Bs
+        zf = torch.vstack((z, f)) # 2 x Bs
+        h = torch.max(zf , dim=0).values # 1 x Bs
+        t = F.one_hot(target, num_classes=nc).type(torch.float32)
+        tmp = torch.matmul(t, mask).sum(dim=1) 
+        lamdah = 1 + tmp * h #  1 x Bs
+        ce = F.cross_entropy(output_logits, target, weight=weight, reduction='none') # 1 x Bs
+        ace1 = (lamdah * ce)
+        return ace1
 def train_sample(epoch, train_loader, model, optimizer, logger, class_weights):
 
     model.train()
@@ -138,9 +153,10 @@ def train_sample(epoch, train_loader, model, optimizer, logger, class_weights):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        tmp_o = o.detach().cpu().numpy()
-        tmp_y = y.detach().cpu().numpy()
-        outputs.append((tmp_o,tmp_y))
+        if epoch in milestones:
+            tmp_o = o.detach().cpu().numpy()
+            tmp_y = y.detach().cpu().numpy()
+            outputs.append((tmp_o,tmp_y))
         torch.cuda.empty_cache()
 
         tl.add(loss.item()) 
@@ -175,21 +191,19 @@ def train(epoch, train_loader, model, optimizer, logger, class_ratio, class_weig
     for step, (x, y, _) in enumerate(train_loader):
         
         x, y = x.cuda(), y.cuda()
-        mask = [1] * len(y)
-        mask= torch.tensor(mask,dtype=torch.float32, requires_grad=False).cuda()
         if cfg['train']['mixup']:
             criterion = nn.CrossEntropyLoss(reduction = 'none').cuda()
             images, targets_a, targets_b, lam = mixup_data(x, y, cfg['train']['mixup_alpha'])
             fea, _, o = model(images)
             if epoch < 160:
-                loss_ori = mixup_ace1(ace1, o, targets_a, targets_b, lam, clambda, ncls, mask, f0)
+                loss_ori = mixup_ace1(ace1, o, targets_a, targets_b, lam, ncls, mask, f0)
             else:
                 loss_ori = mixup_criterion(criterion, o, targets_a, targets_b, lam)
             
         else:
             fea, _, o = model(x)
             if epoch < 160:
-                loss_ori = ace1(o, y, clambda=clambda, nc=ncls, mask=mask, f0=f0)
+                loss_ori = ace1(o, y, nc=ncls, mask=mask, f0=f0)
             else:    
                 loss_ori = F.cross_entropy(o, y, reduction = 'none')
             
@@ -230,10 +244,8 @@ def train(epoch, train_loader, model, optimizer, logger, class_ratio, class_weig
                      
             fea_tmp = fea[idx]
             o_tmp = model.module.classifier(fea_tmp)
-            mask_tmp = [1] * len(y[idx])
-            mask_tmp = torch.tensor(mask_tmp,dtype=torch.float32, requires_grad=False).cuda()
             if epoch < 160:
-                loss_tmp = ace1(o_tmp, y[idx], clambda=clambda, nc=ncls, mask=mask_tmp, f0=f0)
+                loss_tmp = ace1(o_tmp, y[idx], nc=ncls, mask=mask, f0=f0)
             else:    
                 loss_tmp = F.cross_entropy(o_tmp, y[idx], reduction = 'none')
             loss_list.extend(loss_tmp)             
@@ -258,8 +270,9 @@ def train(epoch, train_loader, model, optimizer, logger, class_ratio, class_weig
 
         tl.add(loss.item()) 
         ta.add(acc) 
-        tmp_o = o.detach().cpu().numpy()
-        outputs.append((tmp_o,y_in))
+        if epoch in milestones:
+            tmp_o = o.detach().cpu().numpy()
+            outputs.append((tmp_o,y_in))
         if step % cfg['print_inteval'] == 0:
             print(('Training Loss:{train_loss:.3f}, Ori Loss:{ori_loss:.3f}, Flat Loss:{flat_loss:.3f}, Training Acc:{train_acc:.2f}').format(train_loss = loss.item(), ori_loss = loss_ori.mean().item(), flat_loss = loss_flat, train_acc = acc))
             logger.info(('Training Loss:{train_loss:.3f}, Ori Loss:{ori_loss:.3f}, Flat Loss:{flat_loss:.3f}, Training Acc:{train_acc:.2f}').format(train_loss = loss.item(), ori_loss = loss_ori.mean().item(), flat_loss = loss_flat, train_acc = acc))
@@ -303,7 +316,8 @@ def val(epoch, val_loader, model, logger, train_dataset):
             pred_q = pred_q.argmax(dim=1)
             correct = torch.eq(pred_q, y).sum().item() 
             acc = correct * 1.0 / y.shape[0]
-            outputs.append((o.cpu().numpy(),y.cpu().numpy()))
+            if epoch in milestones:
+                outputs.append((o.cpu().numpy(),y.cpu().numpy()))
             if step % cfg['print_inteval'] == 0:
                 print(('Testing Loss:{val_loss:.3f},  Testing Acc:{val_acc:.2f}').format(val_loss = loss.item(), val_acc = acc))
                 logger.info(('Testing Loss:{val_loss:.3f},  Testing Acc:{val_acc:.2f}').format(val_loss = loss.item(), val_acc = acc))
@@ -383,12 +397,14 @@ if __name__ == '__main__':
 
     # PRE-DEFINE CLASS WEIGHTS
     _, class_ratio, class_weights = pre_compute_class_ratio(cfg, train_dataset)
-
+    cls_num_list=train_dataset.get_cls_num_list()
     # ----- MODEL -----
     model = create_model(cfg, *feature_param).cuda()
     model = nn.DataParallel(model)
     ncls = int(cfg['setting']['num_class'])
 
+    # ----- MASK -----
+    mask = get_mask(cls_num_list, ncls, lambdas)
     # ----- OUTPUTS -----
     train_output, valid_output = [], []
 

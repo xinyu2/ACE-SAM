@@ -101,5 +101,8 @@ def mixup_criterion(criterion, pred, y_a, y_b, lam):
 def mixup_ace(criterion, pred, y_a, y_b, lam, ncls, mask):
     return lam * criterion(pred, y_a, nc=ncls, mask=mask) + (1 - lam) * criterion(pred, y_b, nc=ncls, mask=mask)
 
-def mixup_ace1(criterion, pred, y_a, y_b, lam, clambda, ncls, mask, f0):
-    return lam * criterion(pred, y_a, clambda=clambda, nc=ncls, mask=mask, f0=f0) + (1 - lam) * criterion(pred, y_b, clambda=clambda, nc=ncls, mask=mask, f0=f0)    
+def mixup_ace1_old(criterion, pred, y_a, y_b, lam, clambda, ncls, mask, f0):
+    return lam * criterion(pred, y_a, clambda=clambda, nc=ncls, mask=mask, f0=f0) + (1 - lam) * criterion(pred, y_b, clambda=clambda, nc=ncls, mask=mask, f0=f0)
+
+def mixup_ace1(criterion, pred, y_a, y_b, lam, ncls, mask, f0):
+    return lam * criterion(pred, y_a, nc=ncls, mask=mask, f0=f0) + (1 - lam) * criterion(pred, y_b, nc=ncls, mask=mask, f0=f0)

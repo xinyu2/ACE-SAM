@@ -108,6 +108,17 @@ def pre_compute_class_ratio(cfg, data_source):
 
     return num_per_class, ratios, weights
 
+def get_mask(cls_num_list, ncls, lambdas):
+    mask = torch.eye(ncls, dtype=torch.float32, requires_grad=False).cuda()
+    for k in range(ncls):
+        if cls_num_list[k]>=100:
+            mask[k,k] = lambdas[0]
+        elif cls_num_list[k]>=20:
+            mask[k,k] = lambdas[1]
+        else:
+            mask[k,k] = lambdas[2]
+    return mask
+
 class Averager():
 
     def __init__(self):
